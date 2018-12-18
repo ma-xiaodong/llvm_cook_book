@@ -1,15 +1,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <iostream>
 #include <string>
 #include <vector>
 #include <map>
 
 #include <llvm-c/Core.h>
 #include <llvm/IR/Module.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/DerivedTypes.h>
 
 using namespace llvm;
+
+// some static variables
+static  LLVMContext context;
+static Module *Module_ob;
+static IRBuilder<> Builder(context);
+static std::map<std::string, Value*> Named_Values;
 
 enum Token_Type
 {
@@ -28,6 +38,8 @@ class BaseAST
 public:
   BaseAST(){}; 
   virtual ~BaseAST(){};
+
+  virtual Value *code_gen() = 0;
 };
 
 class VariableAST: public BaseAST
@@ -40,10 +52,18 @@ public:
   ~VariableAST()
   {
 #ifdef DUMP_AST
-    printf("VariableAST\n");
+    std::cout << "VariableAST: " << Var_Name << std::endl;
 #endif
   }
+
+  virtual Value *code_gen();
 };
+
+Value *VariableAST::code_gen()
+{
+  Value *V = Named_Values[Var_Name];
+  return V ? V : 0;
+}
 
 class NumericAST: public BaseAST
 {
@@ -55,10 +75,17 @@ public:
   ~NumericAST()
   {
 #ifdef DUMP_AST
-    printf("NumericAST\n");
+    std::cout << "NumericAST: " << numeric_val << std::endl;
 #endif
   }
+
+  virtual Value *code_gen();
 };
+
+Value *NumericAST::code_gen()
+{
+  return ConstantInt::get(Type::getInt32Ty(context), numeric_val);
+}
 
 class BinaryAST: public BaseAST
 {
@@ -81,7 +108,31 @@ public:
     printf("BinaryAST\n");
 #endif
   }
+  virtual Value *code_gen();
 };
+
+Value *BinaryAST::code_gen()
+{
+  Value *L = LHS->code_gen();
+  Value *R = RHS->code_gen();
+
+  if(L == 0 || R == 0)
+    return 0;
+
+  switch(atoi(Bin_Operator.c_str()))
+  {
+    case '+':
+      return Builder.CreateAdd(L, R, "addtmp");
+    case '-':
+      return Builder.CreateSub(L, R, "subtmp");
+    case '*':
+      return Builder.CreateMul(L, R, "multmp");
+    case '/':
+      return Builder.CreateUDiv(L, R, "divtmp");
+    default:
+      return 0;
+  }
+}
 
 class FunctionDeclAST
 {
@@ -97,10 +148,38 @@ public:
   ~FunctionDeclAST()
   {
 #ifdef DUMP_AST
-    printf("FunctionDeclAST\n");
+    std::cout << "FunctionDeclAST: " << Func_name << std::endl;
 #endif
   }
+  virtual Value *code_gen();
 };
+
+Value *FunctionDeclAST::code_gen()
+{
+  std::vector<Type *> Integers(Arguments.size(), Type::getInt32Ty(context));
+  FunctionType *FT = FunctionType::get(Type::getInt32Ty(context), Integers, false);
+  Function *F = Function::Create(FT, Function::ExternalLinkage, Func_name, Module_ob);
+
+  if(F->getName() != Func_name)
+  {
+    F->eraseFromParent();
+    F = Module_ob->getFunction(Func_name);
+
+    if(!F->empty())
+      return 0;
+    if(F->arg_size() != Arguments.size())
+      return 0;
+  }
+
+  unsigned idx = 0;
+  for(Function::arg_iterator arg_it = F->arg_begin(); idx != Arguments.size(); 
+      ++arg_it, ++idx)
+  {
+    arg_it->setName(Arguments[idx]);
+    Named_Values[Arguments[idx]] = &(*arg_it);
+  }
+  return F;
+}
 
 class FunctionDefnAST
 {
@@ -123,7 +202,28 @@ public:
     printf("FunctionDefnAST\n");
 #endif
   }
+  virtual Value *code_gen();
 };
+
+Value *FunctionDefnAST::code_gen()
+{
+  Named_Values.clear();
+  Function *theFunction = (Function *)(Func_Decl->code_gen());
+  if(theFunction == 0)
+    return 0;
+
+  BasicBlock *BB = BasicBlock::Create(context, "entry", theFunction);
+  Builder.SetInsertPoint(BB);
+
+  if(Value *retVal = Body->code_gen())
+  {
+    Builder.CreateRet(retVal);
+    verifyFunction(*theFunction);
+    return theFunction;
+  }
+  theFunction->eraseFromParent();
+  return 0;
+}
 
 class FunctionCallAST: public BaseAST
 {
@@ -148,7 +248,22 @@ public:
     printf("FunctionCallAST\n");
 #endif
   }
+  virtual Value *code_gen();
 };
+
+Value *FunctionCallAST::code_gen()
+{
+  Function *callee_f = Module_ob->getFunction(Function_Callee);
+  std::vector<Value *> ArgsV;
+
+  for(unsigned i = 0, e = Function_Arguments.size(); i != e; ++i)
+  {
+    ArgsV.push_back(Function_Arguments[i]->code_gen());
+    if(ArgsV.back() == 0)
+      return 0;
+  }
+  return Builder.CreateCall(callee_f, ArgsV, "calltmp");
+}
 
 static int Numeric_Val;
 static std::string Identifier_string;
@@ -471,6 +586,10 @@ static void HandleDefn()
 {
   if(FunctionDefnAST *F = func_defn_parser())
   {
+    if(Function *LF = (Function *)(F->code_gen()))
+    {
+      ;
+    }
     delete F;
   }
   else
@@ -484,6 +603,10 @@ static void HandleTopExpression()
 {
   if(BaseAST *E = expression_parser())
   {
+    if(E->code_gen())
+    {
+      ;
+    }
     delete E;
   }
   else
@@ -511,11 +634,8 @@ static void Driver()
   }
 }
 
-static  LLVMContext context;
-
 int main(int argc, char **argv)
 {
-
   init_precedence();
   file = fopen(argv[1], "r");
   if(file == NULL)
@@ -524,9 +644,8 @@ int main(int argc, char **argv)
     return 0;
   }
 
+  Module_ob = new Module("my compiler", context);
   next_token();
-  Module *Module_ob = new Module("my compiler", context);
-
   Driver();
   Module_ob->dump();
 

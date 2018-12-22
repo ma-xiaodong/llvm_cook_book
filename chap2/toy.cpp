@@ -30,7 +30,6 @@ enum Token_Type
   RPARAN_TOKEN,
   DEF_TOKEN,
   COMM_TOKEN,
-  SEMI_TOKEN
 };
 
 class BaseAST
@@ -61,6 +60,9 @@ public:
 
 Value *VariableAST::code_gen()
 {
+#ifdef DUMP_CG
+  std::cout << "VariableAST CG: " << Var_Name << std::endl;
+#endif
   Value *V = Named_Values[Var_Name];
   return V ? V : 0;
 }
@@ -84,6 +86,9 @@ public:
 
 Value *NumericAST::code_gen()
 {
+#ifdef DUMP_CG
+  std::cout << "NumericAST CG: " << numeric_val << std::endl;
+#endif
   return ConstantInt::get(Type::getInt32Ty(context), numeric_val);
 }
 
@@ -113,6 +118,9 @@ public:
 
 Value *BinaryAST::code_gen()
 {
+#ifdef DUMP_CG
+  std::cout << "BinaryAST CG: " << std::endl;
+#endif
   Value *L = LHS->code_gen();
   Value *R = RHS->code_gen();
 
@@ -156,6 +164,9 @@ public:
 
 Value *FunctionDeclAST::code_gen()
 {
+#ifdef DUMP_CG
+  std::cout << "FunctionDeclAST CG: " << std::endl;
+#endif
   std::vector<Type *> Integers(Arguments.size(), Type::getInt32Ty(context));
   FunctionType *FT = FunctionType::get(Type::getInt32Ty(context), Integers, false);
   Function *F = Function::Create(FT, Function::ExternalLinkage, Func_name, Module_ob);
@@ -207,20 +218,25 @@ public:
 
 Value *FunctionDefnAST::code_gen()
 {
+#ifdef DUMP_CG
+  std::cout << "FunctionDefnAST CG: " << std::endl;
+#endif
   Named_Values.clear();
   Function *theFunction = (Function *)(Func_Decl->code_gen());
   if(theFunction == 0)
     return 0;
 
-  BasicBlock *BB = BasicBlock::Create(context, "entry", theFunction);
-  Builder.SetInsertPoint(BB);
+  BasicBlock *BB_begin = BasicBlock::Create(context, "entry", theFunction);
+  Builder.SetInsertPoint(BB_begin);
 
   if(Value *retVal = Body->code_gen())
   {
     Builder.CreateRet(retVal);
     verifyFunction(*theFunction);
+
     return theFunction;
   }
+
   theFunction->eraseFromParent();
   return 0;
 }
@@ -253,6 +269,9 @@ public:
 
 Value *FunctionCallAST::code_gen()
 {
+#ifdef DUMP_CG
+  std::cout << "FunctionCallAST CG: " << std::endl;
+#endif
   Function *callee_f = Module_ob->getFunction(Function_Callee);
   std::vector<Value *> ArgsV;
 
@@ -262,7 +281,17 @@ Value *FunctionCallAST::code_gen()
     if(ArgsV.back() == 0)
       return 0;
   }
-  return Builder.CreateCall(callee_f, ArgsV, "calltmp");
+
+  if(callee_f == NULL)
+  {
+    std::vector<Type *> Integers(Function_Arguments.size(), Type::getInt32Ty(context));
+    FunctionType *FT = FunctionType::get(Type::getInt32Ty(context), Integers, false);
+    Constant *func_tmp = Module_ob->getOrInsertFunction("calltmp", FT);
+
+    return Builder.CreateCall(func_tmp, ArgsV);
+  }
+  else
+    return Builder.CreateCall(callee_f, ArgsV, "calltmp");
 }
 
 static int Numeric_Val;
@@ -319,12 +348,14 @@ static int get_token()
       LastChar = fgetc(file);
     }while(isdigit(LastChar));
 
+/*
     // Error handling
     if(LastChar != ' ' && LastChar != EOF && LastChar != '\n' && LastChar != '\r')
     {
       printf("Sytax err in number expression!\n");
       exit(0);
     }
+*/
 
     Numeric_Val = strtod(NumStr.c_str(), 0);
 #ifdef DUMP_TOKEN
@@ -618,19 +649,22 @@ static void HandleTopExpression()
 
 static void Driver()
 {
-  switch(Current_token)
+  while(true)
   {
-    case EOF_TOKEN:
-      return;
-    case SEMI_TOKEN:
-      next_token();
-      break;
-    case DEF_TOKEN:
-      HandleDefn();
-      break;
-    default:
-      HandleTopExpression();
-      break; 
+    switch(Current_token)
+    {
+      case EOF_TOKEN:
+        return;
+      case ';':
+        next_token();
+        break;
+      case DEF_TOKEN:
+        HandleDefn();
+        break;
+      default:
+        HandleTopExpression();
+        break; 
+    }
   }
 }
 
@@ -647,8 +681,8 @@ int main(int argc, char **argv)
   Module_ob = new Module("my compiler", context);
   next_token();
   Driver();
-  Module_ob->dump();
 
+  Module_ob->dump();
   fclose(file);
 }
 

@@ -682,7 +682,7 @@ int main(int argc, char **argv)
   next_token();
   Driver();
 
-  Module_ob->dump();
+  Module_ob->print(outs(), nullptr);
   fclose(file);
 }
 

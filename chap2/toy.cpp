@@ -16,7 +16,7 @@
 using namespace llvm;
 
 // some static variables
-static  LLVMContext context;
+static LLVMContext context;
 static Module *Module_ob;
 static IRBuilder<> Builder(context);
 static std::map<std::string, Value*> Named_Values;
@@ -30,6 +30,7 @@ enum Token_Type
   RPARAN_TOKEN,
   DEF_TOKEN,
   COMM_TOKEN,
+  COMMENT_TOKEN,
 };
 
 class BaseAST
@@ -142,15 +143,14 @@ Value *BinaryAST::code_gen()
   }
 }
 
-class FunctionDeclAST
-{
+class FunctionDeclAST: public BaseAST {
   std::string Func_name;
   std::vector<std::string> Arguments;
 
 public:
-  FunctionDeclAST(const std::string &name, const std::vector<std::string> &args):
-  Func_name(name), Arguments(args)
-  {
+  FunctionDeclAST(const std::string &name, 
+                  const std::vector<std::string> &args):
+                  Func_name(name), Arguments(args) {
   }
 
   ~FunctionDeclAST()
@@ -168,18 +168,18 @@ Value *FunctionDeclAST::code_gen()
   std::cout << "FunctionDeclAST CG: " << std::endl;
 #endif
   std::vector<Type *> Integers(Arguments.size(), Type::getInt32Ty(context));
-  FunctionType *FT = FunctionType::get(Type::getInt32Ty(context), Integers, false);
-  Function *F = Function::Create(FT, Function::ExternalLinkage, Func_name, Module_ob);
+  FunctionType *FT = FunctionType::get(Type::getInt32Ty(context), 
+                                       Integers, false);
+  Function *F = Function::Create(FT, Function::ExternalLinkage, 
+                                 Func_name, Module_ob);
 
   if(F->getName() != Func_name)
   {
     F->eraseFromParent();
     F = Module_ob->getFunction(Func_name);
 
-    if(!F->empty())
-      return 0;
-    if(F->arg_size() != Arguments.size())
-      return 0;
+    if(F->empty())  return 0;
+    if(F->arg_size() != Arguments.size()) return 0;
   }
 
   unsigned idx = 0;
@@ -192,8 +192,7 @@ Value *FunctionDeclAST::code_gen()
   return F;
 }
 
-class FunctionDefnAST
-{
+class FunctionDefnAST: public BaseAST {
   FunctionDeclAST *Func_Decl;
   BaseAST *Body;
   
@@ -247,18 +246,16 @@ class FunctionCallAST: public BaseAST
   std::vector<BaseAST *> Function_Arguments;
 
 public:
-  FunctionCallAST(const std::string &callee, std::vector<BaseAST *> &args):
-  Function_Callee(callee), Function_Arguments(args)
-  {
+  FunctionCallAST(const std::string &callee, std::vector<BaseAST *> &args)
+      : Function_Callee(callee), Function_Arguments(args) {
   }
 
-  ~FunctionCallAST()
-  {
+  ~FunctionCallAST() {
     size_t len = Function_Arguments.size();
-    for(size_t idx = 0; idx < len; idx++)
-    {
-      if(Function_Arguments[idx])
+    for(size_t idx = 0; idx < len; idx++) {
+      if(Function_Arguments[idx]) {
 	delete Function_Arguments[idx];
+      }
     }
 #ifdef DUMP_AST
     printf("FunctionCallAST\n");
@@ -275,17 +272,17 @@ Value *FunctionCallAST::code_gen()
   Function *callee_f = Module_ob->getFunction(Function_Callee);
   std::vector<Value *> ArgsV;
 
-  for(unsigned i = 0, e = Function_Arguments.size(); i != e; ++i)
-  {
+  for(unsigned i = 0, e = Function_Arguments.size(); i != e; ++i) {
     ArgsV.push_back(Function_Arguments[i]->code_gen());
     if(ArgsV.back() == 0)
       return 0;
   }
 
-  if(callee_f == NULL)
-  {
-    std::vector<Type *> Integers(Function_Arguments.size(), Type::getInt32Ty(context));
-    FunctionType *FT = FunctionType::get(Type::getInt32Ty(context), Integers, false);
+  if(callee_f == NULL) {
+    std::vector<Type *> Integers(Function_Arguments.size(), 
+                                 Type::getInt32Ty(context));
+    FunctionType *FT = FunctionType::get(Type::getInt32Ty(context), 
+                                         Integers, false);
     Constant *func_tmp = Module_ob->getOrInsertFunction("calltmp", FT);
 
     return Builder.CreateCall(func_tmp, ArgsV);
@@ -315,47 +312,35 @@ static void init_precedence();
 static int getBinOpPrecedence();
 static void Driver();
 
-static int get_token()
-{
+static int get_token() {
   while(isspace(LastChar))
     LastChar = fgetc(file);
 
-  if(isalpha(LastChar)){
+  if(isalpha(LastChar)) {
     Identifier_string = LastChar;
 
     while(isalnum((LastChar = fgetc(file))))
       Identifier_string += LastChar;
 
-    if(Identifier_string == "def")
-    {
+    if(Identifier_string == "def") {
 #ifdef DUMP_TOKEN
       printf("DEF_TOKEN\n");
 #endif
       return DEF_TOKEN;
-    }
+    } else {
 #ifdef DUMP_TOKEN
-    printf("IDENTIFIER_TOKEN\n");
+      printf("IDENTIFIER_TOKEN\n");
 #endif
-    return IDENTIFIER_TOKEN;
+      return IDENTIFIER_TOKEN;
+    }
   }
 
-  if(isdigit(LastChar))
-  {
+  if(isdigit(LastChar)) {
     std::string NumStr;
-    do
-    {
+    do {
       NumStr += LastChar;
       LastChar = fgetc(file);
-    }while(isdigit(LastChar));
-
-/*
-    // Error handling
-    if(LastChar != ' ' && LastChar != EOF && LastChar != '\n' && LastChar != '\r')
-    {
-      printf("Sytax err in number expression!\n");
-      exit(0);
-    }
-*/
+    } while(isdigit(LastChar));
 
     Numeric_Val = strtod(NumStr.c_str(), 0);
 #ifdef DUMP_TOKEN
@@ -364,20 +349,20 @@ static int get_token()
     return NUMERIC_TOKEN;
   }
 
-  if(LastChar == '#')
-  {
-    do
-    {
+  if(LastChar == '#') {
+    do {
       LastChar = fgetc(file);
-    }while(LastChar != EOF && LastChar != '\n' && LastChar != '\r');
+    } while(LastChar != EOF && LastChar != '\n' && LastChar != '\r');
    
-    LastChar = fgetc(file); 
-    if(LastChar != EOF)
-      return get_token();
+    LastChar = fgetc(file);
+    // The next char of EOF is still EOF
+#ifdef DUMP_TOKEN
+    printf("COMMENT_TOKEN: %c\n", LastChar);
+#endif
+    return COMM_TOKEN;
   }
 
-  if(LastChar == '(')
-  {
+  if(LastChar == '(') {
     LastChar = fgetc(file);
 #ifdef DUMP_TOKEN
     printf("LPARAN_TOKEN\n");
@@ -385,8 +370,7 @@ static int get_token()
     return LPARAN_TOKEN;
   }
 
-  if(LastChar == ')')
-  {
+  if(LastChar == ')') {
     LastChar = fgetc(file);
 #ifdef DUMP_TOKEN
     printf("RPARAN_TOKEN\n");
@@ -394,8 +378,7 @@ static int get_token()
     return RPARAN_TOKEN;
   }
 
-  if(LastChar == ',')
-  {
+  if(LastChar == ',') {
     LastChar = fgetc(file);
 #ifdef DUMP_TOKEN
     printf("COMM_TOKEN\n");
@@ -407,7 +390,7 @@ static int get_token()
     return EOF_TOKEN;
 
 #ifdef DUMP_TOKEN
-  printf("Others: %c\n", LastChar);
+  printf("Others %c\n", LastChar);
 #endif
   int ThisChar = LastChar;
   LastChar = fgetc(file);
@@ -437,21 +420,17 @@ static BaseAST *identifier_parser()
 
   next_token();
   std::vector<BaseAST *> Args;
-  if(Current_token != RPARAN_TOKEN)
-  {
-    while(true)
-    {
+  if(Current_token != RPARAN_TOKEN) {
+    while(true) {
       BaseAST *Arg = expression_parser();
-      if(!Arg)
-      {
+      if(!Arg) {
 	printf("Error from expression_parser!\n");
 	return 0;
       }
       Args.push_back(Arg);
       if(Current_token == RPARAN_TOKEN)
 	break;
-      if(Current_token != COMM_TOKEN)
-      {
+      if(Current_token != COMM_TOKEN) {
 	printf("Error in identifier_parser!\n");
 	return 0;
       }
@@ -463,10 +442,8 @@ static BaseAST *identifier_parser()
   return new FunctionCallAST(IdName, Args);
 }
 
-static FunctionDeclAST *func_decl_parser()
-{
-  if(Current_token != IDENTIFIER_TOKEN)
-  {
+static FunctionDeclAST *func_decl_parser() {
+  if(Current_token != IDENTIFIER_TOKEN) {
     printf("Error in func_decl_parser: no function identifier!\n");
     return 0;
   }
@@ -474,8 +451,7 @@ static FunctionDeclAST *func_decl_parser()
   std::string FnName = Identifier_string;
   
   next_token();
-  if(Current_token != LPARAN_TOKEN)
-  {
+  if(Current_token != LPARAN_TOKEN) {
     printf("Error in func_decl_parser: no left paran!\n");
     return 0;
   }
@@ -484,8 +460,7 @@ static FunctionDeclAST *func_decl_parser()
   while(next_token() == IDENTIFIER_TOKEN)
     FunctionArgNames.push_back(Identifier_string);
 
-  if(Current_token != RPARAN_TOKEN)
-  {
+  if(Current_token != RPARAN_TOKEN) {
     printf("Error in func_decl_parser: no right paran!\n");
     return 0;
   }
@@ -493,13 +468,11 @@ static FunctionDeclAST *func_decl_parser()
   return new FunctionDeclAST(FnName, FunctionArgNames);
 }
 
-static FunctionDefnAST *func_defn_parser()
-{
+static FunctionDefnAST *func_defn_parser() {
   // skip the 'def' token
   next_token();
   FunctionDeclAST *Decl = func_decl_parser();
-  if(!Decl)
-  {
+  if(!Decl) {
     printf("Error in func_defn_parser: from func_decl_parser!\n");
     return 0;
   }
@@ -511,27 +484,24 @@ static FunctionDefnAST *func_defn_parser()
   return 0;
 }
 
-static BaseAST *expression_parser()
-{
+static BaseAST *expression_parser() {
   BaseAST *LHS = Base_Parser();
-  if(!LHS)
-  {
+  if(!LHS) {
     printf("Error in expression_parser: from Base_Parser!\n");
     return 0;
   }
 
-  if(Current_token == EOF_TOKEN || Current_token == '\r' || Current_token == '\n')
+  if(Current_token == EOF_TOKEN || Current_token == '\r' || 
+     Current_token == '\n')
     return LHS;
   else
     return binary_op_parser(0, LHS);
 }
 
-static BaseAST *paran_parser()
-{
+static BaseAST *paran_parser() {
   next_token();
   BaseAST *V = expression_parser();
-  if(!V)
-  {
+  if(!V) {
     printf("Error in paran_parser: from expression_parser!\n");
     return 0;
   }
@@ -541,10 +511,8 @@ static BaseAST *paran_parser()
   return V;
 }
 
-static BaseAST *Base_Parser()
-{
-  switch(Current_token)
-  {
+static BaseAST *Base_Parser() {
+  switch(Current_token) {
     case IDENTIFIER_TOKEN:
       return identifier_parser();
     case NUMERIC_TOKEN:
@@ -556,34 +524,29 @@ static BaseAST *Base_Parser()
   }
 }
 
-static void init_precedence()
-{
+static void init_precedence() {
   OperatorPrece['-'] = 1;
   OperatorPrece['+'] = 2;
   OperatorPrece['/'] = 3;
   OperatorPrece['*'] = 4;
 }
 
-static int getBinOpPrecedence()
-{
-  if(Current_token != '+' && Current_token != '-' && Current_token != '*' && Current_token != '/')
-  {
+static int getBinOpPrecedence() {
+  if(Current_token != '+' && Current_token != '-' && 
+     Current_token != '*' && Current_token != '/') {
     return -1;
   }
 
   int TokPrec = OperatorPrece[Current_token];
-  if(TokPrec <= 0)
-  {
+  if(TokPrec <= 0) {
     printf("Error in getBinOpPrecedence: Token_Type!\n");
     return 0;
   }
   return TokPrec;
 }
 
-static BaseAST *binary_op_parser(int old_prec, BaseAST *LHS)
-{
-  while(1)
-  {
+static BaseAST *binary_op_parser(int old_prec, BaseAST *LHS) {
+  while(1) {
     int cur_prec = getBinOpPrecedence();
 
     if(cur_prec < old_prec)
@@ -593,18 +556,15 @@ static BaseAST *binary_op_parser(int old_prec, BaseAST *LHS)
     next_token();
 
     BaseAST *RHS = Base_Parser();
-    if(!RHS)
-    {
+    if(!RHS) {
       printf("Error in binary_op_parser: from Base_Parser!\n");
       return 0;
     }
 
     int next_prec = getBinOpPrecedence();
-    if(cur_prec < next_prec)
-    {
+    if(cur_prec < next_prec) {
       RHS = binary_op_parser(cur_prec + 1, RHS);
-      if(!RHS)
-      {
+      if(!RHS) {
 	printf("Error in binary_op_parser: from binary_op_parser!\n");
 	return 0;
       }
@@ -613,46 +573,35 @@ static BaseAST *binary_op_parser(int old_prec, BaseAST *LHS)
   }
 }
 
-static void HandleDefn()
-{
-  if(FunctionDefnAST *F = func_defn_parser())
-  {
-    if(Function *LF = (Function *)(F->code_gen()))
-    {
+static void HandleDefn() {
+  if(FunctionDefnAST *F = func_defn_parser()) {
+    if(Function *LF = (Function *)(F->code_gen())) {
       ;
     }
     delete F;
   }
-  else
-  {
+  else {
     printf("Error in HandleDefn\n!");
   }
   return;
 }
 
-static void HandleTopExpression()
-{
-  if(BaseAST *E = expression_parser())
-  {
-    if(E->code_gen())
-    {
+static void HandleTopExpression() {
+  if(BaseAST *E = expression_parser()) {
+    if(E->code_gen()) {
       ;
     }
     delete E;
   }
-  else
-  {
+  else {
     printf("Error in HandleTopExpression\n");
   }
   return;
 }
 
-static void Driver()
-{
-  while(true)
-  {
-    switch(Current_token)
-    {
+static void Driver() {
+  while(true) {
+    switch(Current_token) {
       case EOF_TOKEN:
         return;
       case ';':
@@ -668,12 +617,10 @@ static void Driver()
   }
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
   init_precedence();
   file = fopen(argv[1], "r");
-  if(file == NULL)
-  {
+  if(file == NULL) {
     printf("Error: unable to open %s.\n", argv[1]);
     return 0;
   }

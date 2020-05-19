@@ -526,9 +526,9 @@ static BaseAST *Base_Parser() {
 
 static void init_precedence() {
   OperatorPrece['-'] = 1;
-  OperatorPrece['+'] = 2;
-  OperatorPrece['/'] = 3;
-  OperatorPrece['*'] = 4;
+  OperatorPrece['+'] = 1;
+  OperatorPrece['/'] = 2;
+  OperatorPrece['*'] = 2;
 }
 
 static int getBinOpPrecedence() {
@@ -629,6 +629,7 @@ int main(int argc, char **argv) {
   next_token();
   Driver();
 
+  printf("================================\n");
   Module_ob->print(outs(), nullptr);
   fclose(file);
 }

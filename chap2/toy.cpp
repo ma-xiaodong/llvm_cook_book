@@ -307,12 +307,10 @@ public:
 };
 
 Value *ExprIfAST::code_gen() {
-  printf("======== ExprIfAST::code_gen() ========\n");
-/*
   Value *cond_tn = Cond->code_gen();
   if (cond_tn == 0)
     return 0;
-  cond_tn = Builder.CreateICmpNE(cond_tn, Builder.getInt32(0), "ifcond")
+  cond_tn = Builder.CreateICmpNE(cond_tn, Builder.getInt32(0), "ifcond");
 
   Function *TheFunc = Builder.GetInsertBlock()->getParent();
   BasicBlock *ThenBB = BasicBlock::Create(context, "then", TheFunc);
@@ -322,14 +320,27 @@ Value *ExprIfAST::code_gen() {
   Builder.CreateCondBr(cond_tn, ThenBB, ElseBB);
 
   Builder.SetInsertPoint(ThenBB);
-  Value *ThenVal = Then->Codegen();
-  if (ThenVal) == 0;
+  Value *ThenVal = Then->code_gen();
+  if (ThenVal == 0)
     return 0;
-
   Builder.CreateBr(MergeBB);
   ThenBB = Builder.GetInsertBlock();  
-*/
-  return 0;
+
+  TheFunc->getBasicBlockList().push_back(ElseBB);
+  Builder.SetInsertPoint(ElseBB);
+  Value *ElseVal = Else->code_gen();
+  if (ElseVal == 0)
+    return 0;
+  Builder.CreateBr(MergeBB);
+  ElseBB = Builder.GetInsertBlock();
+
+  TheFunc->getBasicBlockList().push_back(MergeBB);
+  Builder.SetInsertPoint(MergeBB);
+  PHINode *Phi = Builder.CreatePHI(Type::getInt32Ty(context), 2, "iftmp");
+  Phi->addIncoming(ThenVal, ThenBB);
+  Phi->addIncoming(ElseVal, ElseBB);
+
+  return Phi;
 }
 
 static int Numeric_Val;

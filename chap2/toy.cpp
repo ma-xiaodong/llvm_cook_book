@@ -31,6 +31,9 @@ enum Token_Type
   DEF_TOKEN,
   COMM_TOKEN,
   COMMENT_TOKEN,
+  IF_TOKEN,
+  THEN_TOKEN,
+  ELSE_TOKEN
 };
 
 class BaseAST
@@ -130,6 +133,9 @@ Value *BinaryAST::code_gen()
 
   switch(atoi(Bin_Operator.c_str()))
   {
+    case '<':
+      L = Builder.CreateICmpULT(L, R, "cmptmp");
+      return Builder.CreateZExt(L, Type::getInt32Ty(context), "booltmp");
     case '+':
       return Builder.CreateAdd(L, R, "addtmp");
     case '-':
@@ -291,6 +297,41 @@ Value *FunctionCallAST::code_gen()
     return Builder.CreateCall(callee_f, ArgsV, "calltmp");
 }
 
+class ExprIfAST : public BaseAST {
+  BaseAST *Cond, *Then, *Else;
+
+public:
+  ExprIfAST(BaseAST *cond, BaseAST *then, BaseAST *else_st)
+      : Cond(cond), Then(then), Else(else_st) {}
+  virtual Value *code_gen();
+};
+
+Value *ExprIfAST::code_gen() {
+  printf("======== ExprIfAST::code_gen() ========\n");
+/*
+  Value *cond_tn = Cond->code_gen();
+  if (cond_tn == 0)
+    return 0;
+  cond_tn = Builder.CreateICmpNE(cond_tn, Builder.getInt32(0), "ifcond")
+
+  Function *TheFunc = Builder.GetInsertBlock()->getParent();
+  BasicBlock *ThenBB = BasicBlock::Create(context, "then", TheFunc);
+  BasicBlock *ElseBB = BasicBlock::Create(context, "else");
+  BasicBlock *MergeBB = BasicBlock::Create(context, "ifcont");
+
+  Builder.CreateCondBr(cond_tn, ThenBB, ElseBB);
+
+  Builder.SetInsertPoint(ThenBB);
+  Value *ThenVal = Then->Codegen();
+  if (ThenVal) == 0;
+    return 0;
+
+  Builder.CreateBr(MergeBB);
+  ThenBB = Builder.GetInsertBlock();  
+*/
+  return 0;
+}
+
 static int Numeric_Val;
 static std::string Identifier_string;
 static FILE *file;
@@ -323,14 +364,14 @@ static int get_token() {
       Identifier_string += LastChar;
 
     if(Identifier_string == "def") {
-#ifdef DUMP_TOKEN
-      printf("DEF_TOKEN\n");
-#endif
       return DEF_TOKEN;
+    } else if(Identifier_string == "if") {
+      return IF_TOKEN;
+    } else if(Identifier_string == "then") {
+      return THEN_TOKEN;
+    } else if(Identifier_string == "else") {
+      return ELSE_TOKEN;
     } else {
-#ifdef DUMP_TOKEN
-      printf("IDENTIFIER_TOKEN\n");
-#endif
       return IDENTIFIER_TOKEN;
     }
   }
@@ -343,9 +384,6 @@ static int get_token() {
     } while(isdigit(LastChar));
 
     Numeric_Val = strtod(NumStr.c_str(), 0);
-#ifdef DUMP_TOKEN
-    printf("NUMERIC_TOKEN: %d\n", Numeric_Val);
-#endif
     return NUMERIC_TOKEN;
   }
 
@@ -356,50 +394,73 @@ static int get_token() {
    
     LastChar = fgetc(file);
     // The next char of EOF is still EOF
-#ifdef DUMP_TOKEN
-    printf("COMMENT_TOKEN: %c\n", LastChar);
-#endif
-    return COMM_TOKEN;
+    return COMMENT_TOKEN;
   }
 
   if(LastChar == '(') {
     LastChar = fgetc(file);
-#ifdef DUMP_TOKEN
-    printf("LPARAN_TOKEN\n");
-#endif
     return LPARAN_TOKEN;
   }
 
   if(LastChar == ')') {
     LastChar = fgetc(file);
-#ifdef DUMP_TOKEN
-    printf("RPARAN_TOKEN\n");
-#endif
     return RPARAN_TOKEN;
   }
 
   if(LastChar == ',') {
     LastChar = fgetc(file);
-#ifdef DUMP_TOKEN
-    printf("COMM_TOKEN\n");
-#endif
     return COMM_TOKEN;
   }
 
   if(LastChar == EOF)
     return EOF_TOKEN;
 
-#ifdef DUMP_TOKEN
-  printf("Others %c\n", LastChar);
-#endif
   int ThisChar = LastChar;
   LastChar = fgetc(file);
   return ThisChar;
 }
 
-static int next_token()
-{
-  Current_token = get_token();
+static void dump_token() {
+  switch(Current_token) {
+    case NUMERIC_TOKEN:
+      printf("NUMERIC_TOKEN");
+      break;
+    case IDENTIFIER_TOKEN:
+      printf("IDENTIFIER_TOKEN");
+      break;
+    case LPARAN_TOKEN:
+      printf("LPARAN_TOKEN");
+      break;
+    case RPARAN_TOKEN:
+      printf("RPARAN_TOKEN");
+      break;
+    case DEF_TOKEN:
+      printf("DEF_TOKEN");
+      break;
+    case COMM_TOKEN:
+      printf("COMM_TOKEN");
+      break;
+    case COMMENT_TOKEN:
+      printf("COMMENT_TOKEN");
+      break;
+    case IF_TOKEN:
+      printf("IF_TOKEN");
+      break;
+    case THEN_TOKEN:
+      printf("THEN_TOKEN");
+      break;
+    case ELSE_TOKEN:
+      printf("ELSE_TOKEN");
+      break;
+  }
+  printf(", LastChar: '%c'\n", LastChar);
+}
+
+static int next_token() {
+  do {
+    Current_token = get_token();
+  } while (Current_token == COMMENT_TOKEN);
+  // dump_token();
   return Current_token;
 }
 
@@ -425,14 +486,14 @@ static BaseAST *identifier_parser()
       BaseAST *Arg = expression_parser();
       if(!Arg) {
 	printf("Error from expression_parser!\n");
-	return 0;
+        exit(0);
       }
       Args.push_back(Arg);
       if(Current_token == RPARAN_TOKEN)
 	break;
       if(Current_token != COMM_TOKEN) {
 	printf("Error in identifier_parser!\n");
-	return 0;
+        exit(0);
       }
       next_token();
     }
@@ -445,7 +506,7 @@ static BaseAST *identifier_parser()
 static FunctionDeclAST *func_decl_parser() {
   if(Current_token != IDENTIFIER_TOKEN) {
     printf("Error in func_decl_parser: no function identifier!\n");
-    return 0;
+    exit(0);
   }
 
   std::string FnName = Identifier_string;
@@ -453,7 +514,7 @@ static FunctionDeclAST *func_decl_parser() {
   next_token();
   if(Current_token != LPARAN_TOKEN) {
     printf("Error in func_decl_parser: no left paran!\n");
-    return 0;
+    exit(0);
   }
 
   std::vector<std::string> FunctionArgNames;
@@ -462,7 +523,7 @@ static FunctionDeclAST *func_decl_parser() {
 
   if(Current_token != RPARAN_TOKEN) {
     printf("Error in func_decl_parser: no right paran!\n");
-    return 0;
+    exit(0);
   }
   next_token();
   return new FunctionDeclAST(FnName, FunctionArgNames);
@@ -474,21 +535,21 @@ static FunctionDefnAST *func_defn_parser() {
   FunctionDeclAST *Decl = func_decl_parser();
   if(!Decl) {
     printf("Error in func_defn_parser: from func_decl_parser!\n");
-    return 0;
+    exit(0);
   }
 
   if(BaseAST *Body = expression_parser())
     return new FunctionDefnAST(Decl, Body);
 
   printf("Error in func_defn_parser!\n");
-  return 0;
+  exit(0);
 }
 
 static BaseAST *expression_parser() {
   BaseAST *LHS = Base_Parser();
   if(!LHS) {
     printf("Error in expression_parser: from Base_Parser!\n");
-    return 0;
+    exit(0);
   }
 
   if(Current_token == EOF_TOKEN || Current_token == '\r' || 
@@ -503,12 +564,45 @@ static BaseAST *paran_parser() {
   BaseAST *V = expression_parser();
   if(!V) {
     printf("Error in paran_parser: from expression_parser!\n");
-    return 0;
+    exit(0);
   }
 
   if(Current_token != RPARAN_TOKEN)
     return 0;
   return V;
+}
+
+static BaseAST *If_parser() {
+  next_token();
+  BaseAST *cond = expression_parser();
+  if (cond == 0) {
+    printf("Error in If_parser : empty cond!\n");
+    exit(0);
+  }
+  if (Current_token != THEN_TOKEN) {
+    printf("Error in If_parser: THEN_TOKEN is not followed!\n");
+    exit(0);
+  }
+
+  next_token();
+  BaseAST *Then = expression_parser();
+  if (Then == 0) {
+    printf("Error in If_parser : empty Then!\n");
+    exit(0);
+  }
+  if (Current_token != ELSE_TOKEN) {
+    printf("Error in If_parser: ELSE_TOKEN is not followed!\n");
+    exit(0);
+  }
+
+  next_token();
+  BaseAST *Else = expression_parser();
+  if (Else == 0) {
+    printf("Error in If_parser : empty Else!\n");
+    exit(0);
+  }
+
+  return new ExprIfAST(cond, Then, Else);
 }
 
 static BaseAST *Base_Parser() {
@@ -519,28 +613,32 @@ static BaseAST *Base_Parser() {
       return numeric_parser();
     case LPARAN_TOKEN:
       return paran_parser();
+    case IF_TOKEN:
+      return If_parser();
     default:
       return 0;
   }
 }
 
 static void init_precedence() {
-  OperatorPrece['-'] = 1;
-  OperatorPrece['+'] = 1;
-  OperatorPrece['/'] = 2;
-  OperatorPrece['*'] = 2;
+  OperatorPrece['<'] = 1;
+  OperatorPrece['-'] = 2;
+  OperatorPrece['+'] = 2;
+  OperatorPrece['/'] = 3;
+  OperatorPrece['*'] = 3;
 }
 
 static int getBinOpPrecedence() {
   if(Current_token != '+' && Current_token != '-' && 
-     Current_token != '*' && Current_token != '/') {
+     Current_token != '*' && Current_token != '/' &&
+     Current_token != '<') {
     return -1;
   }
 
   int TokPrec = OperatorPrece[Current_token];
   if(TokPrec <= 0) {
     printf("Error in getBinOpPrecedence: Token_Type!\n");
-    return 0;
+    exit(0);
   }
   return TokPrec;
 }
@@ -558,7 +656,7 @@ static BaseAST *binary_op_parser(int old_prec, BaseAST *LHS) {
     BaseAST *RHS = Base_Parser();
     if(!RHS) {
       printf("Error in binary_op_parser: from Base_Parser!\n");
-      return 0;
+      exit(0);
     }
 
     int next_prec = getBinOpPrecedence();
@@ -566,7 +664,7 @@ static BaseAST *binary_op_parser(int old_prec, BaseAST *LHS) {
       RHS = binary_op_parser(cur_prec + 1, RHS);
       if(!RHS) {
 	printf("Error in binary_op_parser: from binary_op_parser!\n");
-	return 0;
+        exit(0);
       }
     }
     LHS = new BinaryAST(std::to_string(BinOp), LHS, RHS);
@@ -581,7 +679,8 @@ static void HandleDefn() {
     delete F;
   }
   else {
-    printf("Error in HandleDefn\n!");
+    printf("Error in HandleDefn!\n");
+    exit(0);
   }
   return;
 }
@@ -595,6 +694,7 @@ static void HandleTopExpression() {
   }
   else {
     printf("Error in HandleTopExpression\n");
+    exit(0);
   }
   return;
 }
@@ -604,7 +704,7 @@ static void Driver() {
     switch(Current_token) {
       case EOF_TOKEN:
         return;
-      case ';':
+      case COMM_TOKEN:
         next_token();
         break;
       case DEF_TOKEN:
@@ -622,7 +722,7 @@ int main(int argc, char **argv) {
   file = fopen(argv[1], "r");
   if(file == NULL) {
     printf("Error: unable to open %s.\n", argv[1]);
-    return 0;
+    exit(0);
   }
 
   Module_ob = new Module("my compiler", context);

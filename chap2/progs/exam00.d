@@ -1,2 +1,2 @@
 def foo (x y)
-  x + y * 16;
+  x + y * 16

@@ -33,7 +33,9 @@ enum Token_Type
   COMMENT_TOKEN,
   IF_TOKEN,
   THEN_TOKEN,
-  ELSE_TOKEN
+  ELSE_TOKEN,
+  FOR_TOKEN,
+  IN_TOKEN
 };
 
 class BaseAST
@@ -343,6 +345,21 @@ Value *ExprIfAST::code_gen() {
   return Phi;
 }
 
+class ExprForAST : public BaseAST {
+  std::string Var_Name;
+  BaseAST *Start, *End, *Step, *Body;
+
+public:
+  ExprForAST(const std::string &varname, BaseAST *start, BaseAST *end,
+             BaseAST *step, BaseAST *body)
+      : Var_Name(varname), Start(start), End(end), Step(step), Body(body) {}
+  Value *code_gen() override;
+};
+
+Value *ExprForAST::code_gen() {
+  return 0;
+}
+
 static int Numeric_Val;
 static std::string Identifier_string;
 static FILE *file;
@@ -382,6 +399,10 @@ static int get_token() {
       return THEN_TOKEN;
     } else if(Identifier_string == "else") {
       return ELSE_TOKEN;
+    } else if(Identifier_string == "for") {
+      return FOR_TOKEN;
+    } else if(Identifier_string == "in") {
+      return IN_TOKEN;
     } else {
       return IDENTIFIER_TOKEN;
     }
@@ -529,8 +550,13 @@ static FunctionDeclAST *func_decl_parser() {
   }
 
   std::vector<std::string> FunctionArgNames;
-  while(next_token() == IDENTIFIER_TOKEN)
-    FunctionArgNames.push_back(Identifier_string);
+  next_token();
+  while(Current_token == IDENTIFIER_TOKEN || Current_token == COMM_TOKEN) {
+    if (Current_token == IDENTIFIER_TOKEN) {
+      FunctionArgNames.push_back(Identifier_string);
+    }
+    next_token();
+  }
 
   if(Current_token != RPARAN_TOKEN) {
     printf("Error in func_decl_parser: no right paran!\n");
@@ -715,9 +741,6 @@ static void Driver() {
     switch(Current_token) {
       case EOF_TOKEN:
         return;
-      case COMM_TOKEN:
-        next_token();
-        break;
       case DEF_TOKEN:
         HandleDefn();
         break;

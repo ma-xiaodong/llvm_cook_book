@@ -1,2 +1,3 @@
-for i = 1, i < n, 1 in
-  x + y
+def foo(x, y)
+  for i = 1, i < 100, 1 in
+    x + y

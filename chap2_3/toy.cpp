@@ -366,8 +366,54 @@ public:
 
 Value *ExprForAST::code_gen() {
   Value *StartVal = Start->code_gen();
+  check_cond(StartVal != 0, "Error, StartVal should not be null!\n");
 
-  return StartVal;
+  Function *TheFunction = Builder.GetInsertBlock()->getParent();
+  BasicBlock *PreheaderBB = Builder.GetInsertBlock();
+
+  BasicBlock *LoopBB =  BasicBlock::Create(context, "loop", TheFunction);
+  Builder.CreateBr(LoopBB);
+  Builder.SetInsertPoint(LoopBB);
+  PHINode *Variable = Builder.CreatePHI(Type::getInt32Ty(context), 
+                                        2, Var_Name.c_str());
+  Variable->addIncoming(StartVal, PreheaderBB);
+  Value *OldVal = Named_Values[Var_Name];
+  Named_Values[Var_Name] = Variable;
+
+  check_cond(Body->code_gen() != 0, "Error in code gen for body in for!\n");
+
+  Value *StepVal;
+  if (Step) {
+    StepVal = Step->code_gen();
+    check_cond(StepVal != 0, "Error when code_gen of StepVal!\n");
+  } else {
+    StepVal = ConstantInt::get(Type::getInt32Ty(context), 1);
+  }
+
+  Value *NextVar = Builder.CreateAdd(Variable, StepVal, "nextvar");
+
+  Value *EndCond = End->code_gen();
+  if (EndCond == 0) {
+    return EndCond;
+  }
+
+  EndCond = Builder.CreateICmpNE(EndCond, 
+                                 ConstantInt::get(Type::getInt32Ty(context), 0),
+                                 "loopcond");
+  BasicBlock *LoopEndBB = Builder.GetInsertBlock();
+  BasicBlock *AfterBB = BasicBlock::Create(context, "afterloop", TheFunction);
+  Builder.CreateCondBr(EndCond, LoopBB, AfterBB);
+
+  Builder.SetInsertPoint(AfterBB);
+  Variable->addIncoming(NextVar, LoopEndBB);
+
+  if (OldVal) {
+    Named_Values[Var_Name] = OldVal;
+  } else {
+    Named_Values.erase(Var_Name);
+  }
+
+  return Constant::getNullValue(Type::getInt32Ty(context));
 }
 
 static int Numeric_Val;

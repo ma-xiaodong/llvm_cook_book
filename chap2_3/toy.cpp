@@ -21,8 +21,7 @@ static Module *Module_ob;
 static IRBuilder<> Builder(context);
 static std::map<std::string, Value*> Named_Values;
 
-enum Token_Type
-{
+enum Token_Type {
   EOF_TOKEN = 0,
   NUMERIC_TOKEN,
   IDENTIFIER_TOKEN,
@@ -35,7 +34,9 @@ enum Token_Type
   THEN_TOKEN,
   ELSE_TOKEN,
   FOR_TOKEN,
-  IN_TOKEN
+  IN_TOKEN,
+  UNARY_TOKEN,
+  BINARY_TOKEN
 };
 
 void check_cond(bool cond, std::string message) {
@@ -54,6 +55,26 @@ public:
 
   virtual Value *code_gen() = 0;
 };
+
+static int Numeric_Val;
+static std::string Identifier_string;
+static FILE *file;
+static int LastChar = ' ';
+static int Current_token;
+static std::map<char, int> OperatorPrece;
+static std::map<int, std::string> dump_str;
+
+// declaration of parser functions
+static BaseAST *numeric_parser();
+static BaseAST *identifier_parser();
+static BaseAST *expression_parser();
+static BaseAST *paran_parser();
+static BaseAST *Base_Parser();
+static BaseAST *binary_op_parser(int Old_prec, BaseAST *LHS);
+
+static void init_precedence();
+static int getBinOpPrecedence();
+static void Driver();
 
 class VariableAST: public BaseAST
 {
@@ -130,19 +151,19 @@ public:
   virtual Value *code_gen();
 };
 
-Value *BinaryAST::code_gen()
-{
+Value *BinaryAST::code_gen() {
 #ifdef DUMP_CG
   std::cout << "BinaryAST CG: " << std::endl;
 #endif
   Value *L = LHS->code_gen();
   Value *R = RHS->code_gen();
 
-  if(L == 0 || R == 0)
-    return 0;
+  if(L == 0 || R == 0) {
+    printf("Error in codegen of binary ast, no lhs or rhs!\n");
+    exit(0);
+  }
 
-  switch(atoi(Bin_Operator.c_str()))
-  {
+  switch(atoi(Bin_Operator.c_str())) {
     case '<':
       L = Builder.CreateICmpULT(L, R, "cmptmp");
       return Builder.CreateZExt(L, Type::getInt32Ty(context), "booltmp");
@@ -155,26 +176,51 @@ Value *BinaryAST::code_gen()
     case '/':
       return Builder.CreateUDiv(L, R, "divtmp");
     default:
-      return 0;
+      break;
   }
+
+  Function *F = Module_ob->getFunction(std::string("binary") + Bin_Operator);
+  Value *Ops[2] = {L, R};
+  return Builder.CreateCall(F, Ops, "binop");
 }
 
 class FunctionDeclAST: public BaseAST {
   std::string Func_name;
   std::vector<std::string> Arguments;
+  bool isOperator;
+  unsigned Precedence;
 
 public:
   FunctionDeclAST(const std::string &name, 
-                  const std::vector<std::string> &args):
-                  Func_name(name), Arguments(args) {
-  }
+                  const std::vector<std::string> &args,
+                  bool isoperator = false,
+                  unsigned prec = 0)
+      : Func_name(name), Arguments(args), 
+        isOperator(isoperator), Precedence(prec) {}
 
-  ~FunctionDeclAST()
-  {
+  ~FunctionDeclAST() {
 #ifdef DUMP_AST
     std::cout << "FunctionDeclAST: " << Func_name << std::endl;
 #endif
   }
+
+  bool isUnaryOp() const {
+    return isOperator && Arguments.size() == 1;
+  }
+
+  bool isBinaryOp() const {
+    return isOperator && Arguments.size() == 2;
+  }
+
+  char getOperatorName() const {
+    assert(isUnaryOp() || isBinaryOp());
+    return Func_name[Func_name.size() - 1];
+  }
+
+  unsigned getBinaryPrecedence() const {
+    return Precedence;
+  }
+
   virtual Value *code_gen();
 };
 
@@ -240,12 +286,15 @@ Value *FunctionDefnAST::code_gen()
   Function *theFunction = (Function *)(Func_Decl->code_gen());
   if(theFunction == 0)
     return 0;
+  if (Func_Decl->isBinaryOp()) {
+    OperatorPrece[Func_Decl->getOperatorName()] = 
+        Func_Decl->getBinaryPrecedence();
+  }
 
   BasicBlock *BB_begin = BasicBlock::Create(context, "entry", theFunction);
   Builder.SetInsertPoint(BB_begin);
 
-  if(Value *retVal = Body->code_gen())
-  {
+  if(Value *retVal = Body->code_gen()) {
     Builder.CreateRet(retVal);
     verifyFunction(*theFunction);
 
@@ -280,8 +329,7 @@ public:
   virtual Value *code_gen();
 };
 
-Value *FunctionCallAST::code_gen()
-{
+Value *FunctionCallAST::code_gen() {
 #ifdef DUMP_CG
   std::cout << "FunctionCallAST CG: " << std::endl;
 #endif
@@ -416,27 +464,6 @@ Value *ExprForAST::code_gen() {
   return Constant::getNullValue(Type::getInt32Ty(context));
 }
 
-static int Numeric_Val;
-static std::string Identifier_string;
-static FILE *file;
-static int LastChar = ' ';
-static int Current_token;
-static std::map<char, int> OperatorPrece;
-static std::map<int, std::string> dump_str;
-
-// declaration of parser functions
-static BaseAST *numeric_parser();
-static BaseAST *identifier_parser();
-static FunctionDeclAST *func_decl_parser();
-static FunctionDefnAST *func_defn_parser();
-static BaseAST *expression_parser();
-static BaseAST *paran_parser();
-static BaseAST *Base_Parser();
-static BaseAST *binary_op_parser(int Old_prec, BaseAST *LHS);
-
-static void init_precedence();
-static int getBinOpPrecedence();
-static void Driver();
 
 static int get_token() {
   while(isspace(LastChar))
@@ -460,6 +487,8 @@ static int get_token() {
       return FOR_TOKEN;
     } else if(Identifier_string == "in") {
       return IN_TOKEN;
+    } else if(Identifier_string == "binary") {
+      return BINARY_TOKEN;
     } else {
       return IDENTIFIER_TOKEN;
     }
@@ -566,11 +595,48 @@ static BaseAST *identifier_parser()
 }
 
 static FunctionDeclAST *func_decl_parser() {
-  check_cond(Current_token == IDENTIFIER_TOKEN, 
-             "Error in func_decl_parser: no function identifier!\n");
+  std::string FnName;
+  unsigned Kind = 0;
+  unsigned BinaryPrecedence = 30;
 
-  std::string FnName = Identifier_string;
-  
+  switch (Current_token) {
+    case IDENTIFIER_TOKEN:
+      FnName = Identifier_string;
+      Kind = 0;
+      break;
+    case UNARY_TOKEN:
+      next_token();
+      check_cond(isascii(Current_token) != 0, "Error token followed Unary!\n");
+
+      FnName = "unary";
+      FnName += (char)Current_token;
+      Kind = 1;
+
+      break;
+    case BINARY_TOKEN:
+      next_token();
+      check_cond(isascii(Current_token) != 0, "Error token followed Unary!\n");
+
+      FnName = "binary";
+      FnName += (char)Current_token;
+      Kind = 2;
+      next_token();
+
+      // if precedence is given
+      if (Current_token == NUMERIC_TOKEN) {
+        if (Numeric_Val < 1 || Numeric_Val > 100) {
+          printf("Error: wrong precedence number!");
+          exit(0);
+        }
+        BinaryPrecedence = (unsigned)Numeric_Val;
+      }
+
+      break;
+    default:
+      printf("Error occured in func_decl_parser!\n");
+      exit(0);
+  }
+
   next_token();
   check_cond(Current_token == LPARAN_TOKEN, 
              "Error in func_decl_parser: no left paran!\n");
@@ -586,8 +652,14 @@ static FunctionDeclAST *func_decl_parser() {
 
   check_cond(Current_token == RPARAN_TOKEN, 
              "Error in func_decl_parser: no right paran!\n");
+  if (Kind && FunctionArgNames.size() != Kind) {
+    printf("Error: kind and function arg name size do not match!\n");
+    exit(0);
+  }
+
   next_token();
-  return new FunctionDeclAST(FnName, FunctionArgNames);
+  return new FunctionDeclAST(FnName, FunctionArgNames, 
+                             Kind != 0, BinaryPrecedence);
 }
 
 static FunctionDefnAST *func_defn_parser() {
@@ -806,7 +878,8 @@ int main(int argc, char **argv) {
   dump_str[THEN_TOKEN] = "THEN_TOKEN";
   dump_str[ELSE_TOKEN] = "ELSE_TOKEN"; 
   dump_str[FOR_TOKEN] = "FOR_TOKEN";
-  dump_str[IN_TOKEN] = "IN_TOKEN"; 
+  dump_str[IN_TOKEN] = "IN_TOKEN";
+  dump_str[BINARY_TOKEN] = "BINARY_TOKEN"; 
 
   file = fopen(argv[1], "r");
   if(file == NULL) {

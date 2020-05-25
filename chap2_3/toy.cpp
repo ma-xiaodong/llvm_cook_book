@@ -7,6 +7,7 @@
 #include <map>
 
 #include <llvm-c/Core.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/IRBuilder.h>
@@ -20,6 +21,7 @@ static LLVMContext context;
 static Module *Module_ob;
 static IRBuilder<> Builder(context);
 static std::map<std::string, Value*> Named_Values;
+static ExecutionEngine *TheEngine;
 
 enum Token_Type {
   EOF_TOKEN = 0,
@@ -862,9 +864,7 @@ static void Driver() {
   }
 }
 
-int main(int argc, char **argv) {
-  init_precedence();
-
+void assign_dump_str() {
   // dump information
   dump_str[EOF_TOKEN] = "EOF_TOKEN"; 
   dump_str[NUMERIC_TOKEN] = "NUMERIC_TOKEN"; 
@@ -881,6 +881,14 @@ int main(int argc, char **argv) {
   dump_str[IN_TOKEN] = "IN_TOKEN";
   dump_str[BINARY_TOKEN] = "BINARY_TOKEN"; 
 
+  return;
+}
+
+int main(int argc, char **argv) {
+  init_precedence();
+  assign_dump_str();
+
+  TheEngine = EngineBuilder(Module_ob).create();
   file = fopen(argv[1], "r");
   if(file == NULL) {
     printf("Error: unable to open %s.\n", argv[1]);

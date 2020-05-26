@@ -1,0 +1,3 @@
+/home/mxd/github/llvm_cook_book/chap4/00_FunCount/build/CMakeFiles/edit_cache.dir
+/home/mxd/github/llvm_cook_book/chap4/00_FunCount/build/CMakeFiles/rebuild_cache.dir
+/home/mxd/github/llvm_cook_book/chap4/00_FunCount/build/CMakeFiles/chap4.dir

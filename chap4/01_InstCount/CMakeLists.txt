@@ -8,8 +8,8 @@ include_directories(
     ${LLVM_SRC_DIR}/include
 )
 
-add_library(FunCount MODULE FunCount.cpp)
-target_compile_features(FunCount PRIVATE cxx_range_for cxx_auto_type)
-set_target_properties(FunCount PROPERTIES
+add_library(InstCount MODULE InstCount.cpp)
+target_compile_features(InstCount PRIVATE cxx_range_for cxx_auto_type)
+set_target_properties(InstCount PROPERTIES
     COMPILE_FLAGS "-fno-rtti"
 )

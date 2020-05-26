@@ -3,4 +3,4 @@ rm -rf *
 cmake ../
 make
 cd ../
-opt -load ./build/libchap4.so -fc exam_00.ll -disable-output -debug-pass=Structure
+opt -load ./build/libFunCount.so -fc exam_00.ll -disable-output -debug-pass=Structure

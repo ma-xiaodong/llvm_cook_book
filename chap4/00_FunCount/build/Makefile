@@ -111,17 +111,17 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named chap4
+# Target rules for targets named FunCount
 
 # Build rule for target.
-chap4: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 chap4
-.PHONY : chap4
+FunCount: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 FunCount
+.PHONY : FunCount
 
 # fast build rule for target.
-chap4/fast:
-	$(MAKE) -f CMakeFiles/chap4.dir/build.make CMakeFiles/chap4.dir/build
-.PHONY : chap4/fast
+FunCount/fast:
+	$(MAKE) -f CMakeFiles/FunCount.dir/build.make CMakeFiles/FunCount.dir/build
+.PHONY : FunCount/fast
 
 FunCount.o: FunCount.cpp.o
 
@@ -129,7 +129,7 @@ FunCount.o: FunCount.cpp.o
 
 # target to build an object file
 FunCount.cpp.o:
-	$(MAKE) -f CMakeFiles/chap4.dir/build.make CMakeFiles/chap4.dir/FunCount.cpp.o
+	$(MAKE) -f CMakeFiles/FunCount.dir/build.make CMakeFiles/FunCount.dir/FunCount.cpp.o
 .PHONY : FunCount.cpp.o
 
 FunCount.i: FunCount.cpp.i
@@ -138,7 +138,7 @@ FunCount.i: FunCount.cpp.i
 
 # target to preprocess a source file
 FunCount.cpp.i:
-	$(MAKE) -f CMakeFiles/chap4.dir/build.make CMakeFiles/chap4.dir/FunCount.cpp.i
+	$(MAKE) -f CMakeFiles/FunCount.dir/build.make CMakeFiles/FunCount.dir/FunCount.cpp.i
 .PHONY : FunCount.cpp.i
 
 FunCount.s: FunCount.cpp.s
@@ -147,7 +147,7 @@ FunCount.s: FunCount.cpp.s
 
 # target to generate assembly for a file
 FunCount.cpp.s:
-	$(MAKE) -f CMakeFiles/chap4.dir/build.make CMakeFiles/chap4.dir/FunCount.cpp.s
+	$(MAKE) -f CMakeFiles/FunCount.dir/build.make CMakeFiles/FunCount.dir/FunCount.cpp.s
 .PHONY : FunCount.cpp.s
 
 # Help Target
@@ -158,7 +158,7 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
-	@echo "... chap4"
+	@echo "... FunCount"
 	@echo "... FunCount.o"
 	@echo "... FunCount.i"
 	@echo "... FunCount.s"

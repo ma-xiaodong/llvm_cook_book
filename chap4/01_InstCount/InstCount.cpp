@@ -15,13 +15,30 @@ struct CountOpcode: public FunctionPass {
 
   virtual bool runOnFunction(Function &F) {
     llvm::outs() << "Function: " << F.getName() << "\n";
-    return true;
+    for (Function::iterator bb = F.begin(), e = F.end(); bb != e; bb++) {
+      for (BasicBlock::iterator i = bb->begin(), e = bb->end(); i != e; i++) {
+        if (opcodeCounter.find(i->getOpcodeName()) == opcodeCounter.end()){
+          opcodeCounter[i->getOpcodeName()] = 1;
+        } else {
+          opcodeCounter[i->getOpcodeName()] += 1;
+        }
+      }
+    }
+    std::map<std::string, int>::iterator i = opcodeCounter.begin();
+    std::map<std::string, int>::iterator e = opcodeCounter.end();
+
+    while (i != e) {
+      llvm::outs() << i->first << ": " << i->second << "\n";
+      i++;
+    }
+    opcodeCounter.clear();
+    return false;
   }
 };
 }
 
-char CountOpcode::ID = 0;                                                     
-static RegisterPass<CountOpcode> X("fc", "count the functions",               
-                                   false /* Only looks at CFG */,             
+char CountOpcode::ID = 0;
+static RegisterPass<CountOpcode> X("oc", "count the functions",
+                                   false /* Only looks at CFG */,
                                    false /* Analysis Pass */);
 
